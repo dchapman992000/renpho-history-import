@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Restore ES-CS20M history from a RENPHO Health CSV."""
+"""Restore RENPHO Elis 1 (ES-CS20M) history from a RENPHO Health CSV."""
 import argparse
 import csv
 import getpass
@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+ES_CS20M_DEVICE_TYPE = "00007"
 UPLOAD = "RenphoHealth/scale/uploadMeasureData/"
 MASS = {
     "Weight(lb)": "weight", "Muscle Mass(lb)": "muscle",
@@ -113,7 +114,7 @@ def es_cs20m_mac(existing):
     for stamp in sorted(existing, reverse=True):
         for store, row in existing[stamp]:
             mac = row.get("mac")
-            if (store == "scale history" and row.get("deviceType") == "00007"
+            if (store == "scale history" and row.get("deviceType") == ES_CS20M_DEVICE_TYPE
                     and isinstance(mac, str) and mac.strip("0:- ")):
                 return mac
     raise ValueError("No ES-CS20M reading with a usable device address was returned. No upload sent.")
@@ -129,7 +130,7 @@ def same_address(row, mac):
 def scale_match(expected, candidates, mac):
     return any(
         store == "scale history"
-        and actual.get("deviceType") == "00007"
+        and actual.get("deviceType") == ES_CS20M_DEVICE_TYPE
         and same_address(actual, mac)
         and not differences(expected, actual, {"smmMass"})
         for store, actual in candidates
@@ -145,11 +146,11 @@ def differences(expected, actual, ignored=frozenset()):
     ]
 
 
-def upload(client, rows, zone):
+def upload(client, rows, zone, *, endpoint=UPLOAD, instant=None):
     from renpho.constants import APP_VERSION, PLATFORM
     from renpho.crypto import encrypt_request
 
-    offset = datetime.now(zone).strftime("%z")
+    offset = (instant or datetime.now(zone)).strftime("%z")
     hour = int(offset[1:3])
     short_offset = f"{offset[0]}{hour}" + (f":{offset[3:]}" if offset[3:] != "00" else "")
     headers = {
@@ -158,8 +159,8 @@ def upload(client, rows, zone):
         "Content-Type": "application/json", "timeZone": short_offset,
         "zoneId": zone.key,
     }
-    result = client._transport.post(UPLOAD, encrypt_request(rows), headers=headers)
-    if result.get("code") not in (0, "0", 200, "200", 20000, "20000") and (
+    result = client._transport.post(endpoint, encrypt_request(rows), headers=headers)
+    if result.get("code") not in (0, "0", 101, "101", 200, "200", 20000, "20000") and (
         str(result.get("msg", "")).lower() != "success"
     ):
         code = str(result.get("code", "unknown"))
@@ -260,7 +261,7 @@ def main():
             dict(
                 ((key, value) for key, value in record.items() if key != "smmMass"),
                 bUserId=str(client.user_id), userId=int(client.user_id),
-                deviceType="00007", displayModuleType=0, isAuto=2, method=5, mac=mac,
+                deviceType=ES_CS20M_DEVICE_TYPE, displayModuleType=0, isAuto=2, method=5, mac=mac,
             )
             for record in batch
         ]

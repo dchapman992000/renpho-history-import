@@ -2,12 +2,12 @@
 
 Restore a RENPHO Health guest-mode CSV into your signed-in RENPHO Health account. The importer previews conflicts, uploads in small batches, and reads each batch back before continuing.
 
-Tested end to end with a **RENPHO ES-CS20M**, Android RENPHO Health **7.11.6**, and an export of **749 readings**. Other models and export formats are untested. The script uses an unofficial RENPHO API that may change.
+Tested end to end with a **RENPHO Elis 1** (hardware model `ES-CS20M`), Android RENPHO Health **7.11.6**, and an export of **749 readings**. Other models and export formats are untested. The script uses an unofficial RENPHO API that may change.
 
 ## Before you start
 
 - Keep your original CSV. This tool expects the English RENPHO Health export with pound-based weight and mass columns. [Synthetic CSV](examples/synthetic.csv) shows the input format.
-- Sign into the destination RENPHO Health account and take a normal weigh-in with the **same physical ES-CS20M** that produced the export. The script reuses the device address from the most recent standard-scale reading with device type `00007` and a usable address. If you've used multiple scales with that device type, verify the most recent one is the intended scale before proceeding.
+- Sign into the destination RENPHO Health account and take a normal weigh-in with the **same physical ES-CS20M** that produced the export. The script reuses the device address from the most recent standard-scale reading with API `deviceType` value `00007` and a usable address. If you've used multiple scales with that device type, verify the most recent one is the intended scale before proceeding.
 - Use your RENPHO Health email and **RENPHO password**. The script prompts for the password locally. If you normally use Google sign-in, verify that password sign-in opens the same RENPHO profile before uploading.
 - Know the time zone used in the CSV. Use an IANA zone such as `America/Chicago` so historical daylight-saving offsets are applied. The script stops on ambiguous or nonexistent local timestamps.
 
@@ -73,3 +73,26 @@ The ES-CS20M upload uses RENPHO's standard-scale history route. On that route, m
 The standard-scale payload has no standalone skeletal muscle mass (`smmMass`) field. Keep the CSV if you need that column as originally exported. The importer also leaves raw impedance and other device measurements out because the CSV lacks them.
 
 Authentication, encryption, and history reads use [renpho-py](https://github.com/ChocoTonic/renpho-py). The script talks directly to RENPHO and keeps the password, session token, and device address in memory.
+
+## Transfer MorphoScan Nova Full Reports
+
+Use the Nova command for the **RENPHO MorphoScan Nova** (hardware model `R-MSC04`, observed API `deviceType` value `00053`). It exports the signed-in profile's cloud
+composition records to a new private JSON file, including all ten impedance
+channels and 30 regional values. Keep this file private. The destination needs
+an existing Full Report from the same scale. Supply the respective numeric
+source and destination profile IDs.
+
+```sh
+python nova_history.py export --email source@example.com --account-id SOURCE_ID --json reports.json
+python nova_history.py plan --email destination@example.com --account-id DEST_ID --json reports.json
+python nova_history.py import --email destination@example.com --account-id DEST_ID --json reports.json --timezone America/Chicago
+```
+
+Each command also accepts a renpho-py session file via `--session PATH` in
+place of `--email`. Password login can end an existing mobile session.
+The import keeps the measurement epoch, formats the upload's local time in
+the supplied zone, and lets the destination issue a new report ID. It writes
+one report at a time and checks 89 measurement values in composition history.
+Repeated equivalent measurements at one timestamp produce one destination
+reading. A different measurement at an occupied timestamp is a conflict. The plan also flags a matching weight and ten impedances from the same scale at a different epoch. Readback checks the original local date and time. Run
+the plan again after an interrupted upload.
